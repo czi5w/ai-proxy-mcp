@@ -68,9 +68,13 @@ mkdir -p ~/.hermes
 cat /home/pi/ai-proxy-mcp/hermes/config.yaml.example >> ~/.hermes/config.yaml
 $EDITOR ~/.hermes/config.yaml      # consolidate any duplicate keys
 
-# Drop the context file
-mkdir -p ~/.hermes/context
-cp /home/pi/ai-proxy-mcp/hermes/context/ai_proxy.md ~/.hermes/context/
+# Drop the context file as AGENTS.md in ~/.hermes (or .hermes.md)
+cp /home/pi/ai-proxy-mcp/hermes/context/ai_proxy.md ~/.hermes/AGENTS.md
+
+# Tell the gateway to chdir into ~/.hermes so it discovers AGENTS.md.
+# Add to ~/.hermes/config.yaml:
+#   terminal:
+#     cwd: /home/pi/.hermes
 
 # Run as a user service
 hermes gateway install

@@ -128,11 +128,28 @@ journalctl -u ai-proxy-mcp -f
 
 ## Hermes context file
 
-The bridge ships [hermes/context/ai_proxy.md](hermes/context/ai_proxy.md) — a short prompt that teaches the LLM how to use these tools intelligently. Copy it into Hermes:
+The bridge ships [hermes/context/ai_proxy.md](hermes/context/ai_proxy.md) — a short prompt that teaches the LLM how to use these tools intelligently.
+
+**Important:** Hermes loads context from its current working directory, not from
+an arbitrary file path. The file must be named one of `.hermes.md`,
+`AGENTS.md`, `CLAUDE.md`, or `.cursorrules` (first match wins) and live in
+the gateway's working directory.
+
+Recommended setup:
 
 ```bash
-mkdir -p ~/.hermes/context
-cp hermes/context/ai_proxy.md ~/.hermes/context/
+# 1. Drop the file into ~/.hermes as AGENTS.md
+cp hermes/context/ai_proxy.md ~/.hermes/AGENTS.md
+
+# 2. Tell the gateway to use ~/.hermes as its CWD
+#    Edit ~/.hermes/config.yaml and add:
+#       terminal:
+#         cwd: /home/<your-user>/.hermes
+#    or set MESSAGING_CWD in ~/.hermes/.env
+
+# 3. Restart so it picks up the new CWD + context file
+hermes gateway stop && hermes gateway start
 ```
 
-(See Hermes docs for how context files are loaded into the system prompt.)
+Verify by DMing the bot `pwd` — it should print the directory containing
+your `AGENTS.md`.

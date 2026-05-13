@@ -177,6 +177,17 @@ def make_handler(cfg: Config, pool: DevicePool):
 
 async def serve_ws(cfg: Config, pool: DevicePool) -> websockets.WebSocketServer:
     handler = make_handler(cfg, pool)
-    server = await websockets.serve(handler, cfg.ws_host, cfg.ws_port)
+    # Disable server-initiated ping. AI_Proxy is single-threaded inside its
+    # ACP loop and won't service pings during long Copilot runs (>20s by
+    # default), so a heartbeat would force-disconnect every long task.
+    # We rely on TCP keepalive (kernel) plus normal frame traffic instead.
+    server = await websockets.serve(
+        handler,
+        cfg.ws_host,
+        cfg.ws_port,
+        ping_interval=None,
+        ping_timeout=None,
+        max_size=8 * 1024 * 1024,
+    )
     logger.info("WS server listening on ws://%s:%d", cfg.ws_host, cfg.ws_port)
     return server
