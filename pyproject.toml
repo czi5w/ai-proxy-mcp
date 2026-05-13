@@ -1,0 +1,32 @@
+[project]
+name = "ai-proxy-mcp"
+version = "0.1.0"
+description = "MCP bridge for AI_Proxy reverse-WS device pool. Lets Hermes Agent route LLM tasks to multiple in-domain machines running Copilot CLI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "ai_chat team" }]
+dependencies = [
+    "mcp>=1.2.0",
+    "websockets>=12.0",
+    "uvicorn>=0.30.0",
+    "starlette>=0.37.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0", "ruff>=0.5.0"]
+
+[project.scripts]
+ai-proxy-mcp = "ai_proxy_mcp.main:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ai_proxy_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

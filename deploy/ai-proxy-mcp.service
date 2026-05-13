@@ -1,0 +1,24 @@
+[Unit]
+Description=AI_Proxy MCP Bridge (WS server + MCP HTTP server for Hermes Agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/ai-proxy-mcp
+EnvironmentFile=/home/pi/ai-proxy-mcp/.env
+ExecStart=/home/pi/ai-proxy-mcp/.venv/bin/ai-proxy-mcp
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/pi/ai-proxy-mcp
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
