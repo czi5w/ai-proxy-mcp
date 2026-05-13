@@ -23,14 +23,28 @@ cp .env.example .env
 
 ## 2. Install the systemd unit
 
-The unit file assumes user `pi` and path `/home/pi/ai-proxy-mcp`. Edit it if
-your install differs.
+The unit file assumes user `pi` and path `/home/pi/ai-proxy-mcp`. **You
+almost certainly need to edit it** to match your actual user and install
+location.
+
+Easiest with `sed` (replace `myuser` with your real username):
 
 ```bash
-sudo cp deploy/ai-proxy-mcp.service /etc/systemd/system/
+USER_NAME=$(whoami)
+sed "s|User=pi|User=$USER_NAME|g; s|Group=pi|Group=$USER_NAME|g; \
+     s|/home/pi/|$HOME/|g" deploy/ai-proxy-mcp.service \
+  | sudo tee /etc/systemd/system/ai-proxy-mcp.service > /dev/null
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now ai-proxy-mcp
 sudo systemctl status ai-proxy-mcp
+```
+
+Don't forget to create the `.env` file before starting:
+
+```bash
+cp .env.example .env
+$EDITOR .env
 ```
 
 Logs:

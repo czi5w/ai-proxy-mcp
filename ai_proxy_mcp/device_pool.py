@@ -9,11 +9,22 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
-
-from websockets.server import WebSocketServerProtocol
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def is_ws_open(ws: Any) -> bool:
+    """Cross-version check for whether a websocket is open.
+
+    websockets >= 14 exposes ``state`` (a State enum) on the new asyncio
+    API (``ServerConnection``) and dropped ``closed``. The legacy
+    ``WebSocketServerProtocol`` (< 14) still has ``closed``. Support both.
+    """
+    state = getattr(ws, "state", None)
+    if state is not None:
+        return getattr(state, "name", "") == "OPEN"
+    return not getattr(ws, "closed", True)
 
 
 @dataclass
@@ -32,19 +43,19 @@ class DevicePool:
     """Thread-safe (single-loop) registry of device connections and pending tasks."""
 
     def __init__(self) -> None:
-        self._devices: dict[str, WebSocketServerProtocol] = {}
+        self._devices: dict[str, Any] = {}
         self._pending: dict[str, PendingTask] = {}
 
     # ── Device lifecycle ────────────────────────────────────────
 
-    def register(self, device_id: str, ws: WebSocketServerProtocol) -> Optional[WebSocketServerProtocol]:
+    def register(self, device_id: str, ws: Any) -> Optional[Any]:
         """Register a new connection for the given device. Returns the previous
         connection (if any) so the caller can close it."""
         prev = self._devices.get(device_id)
         self._devices[device_id] = ws
         return prev
 
-    def unregister(self, device_id: str, ws: WebSocketServerProtocol) -> None:
+    def unregister(self, device_id: str, ws: Any) -> None:
         """Remove the device only if the active connection still matches `ws`."""
         if self._devices.get(device_id) is ws:
             del self._devices[device_id]
@@ -61,9 +72,9 @@ class DevicePool:
 
     def is_connected(self, device_id: str) -> bool:
         ws = self._devices.get(device_id)
-        return ws is not None and not ws.closed
+        return ws is not None and is_ws_open(ws)
 
-    def get(self, device_id: str) -> Optional[WebSocketServerProtocol]:
+    def get(self, device_id: str) -> Optional[Any]:
         return self._devices.get(device_id)
 
     def busy_devices(self) -> set[str]:

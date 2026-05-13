@@ -21,10 +21,9 @@ import uuid
 from typing import Optional
 
 import websockets
-from websockets.server import WebSocketServerProtocol
 
 from .config import Config
-from .device_pool import DevicePool
+from .device_pool import DevicePool, is_ws_open
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +48,7 @@ class Bridge:
             asyncio.TimeoutError: no `done` frame within ``task_timeout`` seconds.
         """
         ws = self.pool.get(device_id)
-        if ws is None or ws.closed:
+        if ws is None or not is_ws_open(ws):
             raise RuntimeError(f'device "{device_id}" not connected')
 
         task_id = str(uuid.uuid4())
@@ -75,9 +74,7 @@ class Bridge:
             raise
 
 
-async def _read_register(
-    ws: WebSocketServerProtocol, register_timeout: int
-) -> Optional[str]:
+async def _read_register(ws, register_timeout: int) -> Optional[str]:
     """Wait for the first frame; if it's a valid register, return device_id."""
     try:
         raw = await asyncio.wait_for(ws.recv(), timeout=register_timeout)
@@ -97,9 +94,7 @@ async def _read_register(
     return str(msg["device_id"])
 
 
-async def _handle_inbound(
-    ws: WebSocketServerProtocol, device_id: str, pool: DevicePool
-) -> None:
+async def _handle_inbound(ws, device_id: str, pool: DevicePool) -> None:
     """Loop reading frames from a registered device until it disconnects."""
     async for raw in ws:
         try:
@@ -140,7 +135,7 @@ async def _handle_inbound(
 def make_handler(cfg: Config, pool: DevicePool):
     """Return a websockets connection handler bound to this pool/config."""
 
-    async def handler(ws: WebSocketServerProtocol) -> None:
+    async def handler(ws) -> None:
         peer = ws.remote_address
         logger.info("connection opened from %s, awaiting register", peer)
 
@@ -150,7 +145,7 @@ def make_handler(cfg: Config, pool: DevicePool):
             return
 
         prev = pool.register(device_id, ws)
-        if prev is not None and not prev.closed:
+        if prev is not None and is_ws_open(prev):
             logger.warning(
                 'device "%s" reconnected; closing previous connection', device_id
             )

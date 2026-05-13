@@ -5,19 +5,23 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/ai-proxy-mcp
-EnvironmentFile=/home/pi/ai-proxy-mcp/.env
-ExecStart=/home/pi/ai-proxy-mcp/.venv/bin/ai-proxy-mcp
+# Edit User/Group/paths for your install. Defaults assume:
+#   user      = middleware-team
+#   checkout  = /home/middleware-team/ai-proxy-mcp
+#   venv      = /home/middleware-team/ai-proxy-mcp/.venv
+User=middleware-team
+Group=middleware-team
+WorkingDirectory=/home/middleware-team/ai-proxy-mcp
+EnvironmentFile=/home/middleware-team/ai-proxy-mcp/.env
+ExecStart=/home/middleware-team/ai-proxy-mcp/.venv/bin/ai-proxy-mcp
 Restart=on-failure
 RestartSec=5
 
-# Hardening
+# Hardening — disable if you hit permission issues during bring-up.
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/home/pi/ai-proxy-mcp
+ReadWritePaths=/home/middleware-team/ai-proxy-mcp
 ProtectHome=read-only
 
 [Install]
