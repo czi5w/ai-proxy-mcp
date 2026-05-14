@@ -13,18 +13,19 @@ import uvicorn
 from .config import Config, configure_logging
 from .device_pool import DevicePool
 from .mcp_server import build_mcp_app
-from .ws_server import Bridge, serve_ws
+from .ws_server import Bridge, cleanup_loop, serve_ws
 
 logger = logging.getLogger("ai_proxy_mcp")
 
 
 async def _run(cfg: Config) -> int:
-    pool = DevicePool()
-    bridge = Bridge(pool, task_timeout=cfg.task_timeout_seconds)
+    pool = DevicePool(retention_seconds=cfg.task_retention_seconds)
+    bridge = Bridge(pool)
 
     ws_server = await serve_ws(cfg, pool)
+    cleanup_task = asyncio.create_task(cleanup_loop(pool))
 
-    mcp_app = build_mcp_app(bridge)
+    mcp_app = build_mcp_app(bridge, wait_max_timeout=cfg.wait_max_timeout)
     uv_config = uvicorn.Config(
         mcp_app,
         host=cfg.mcp_host,
@@ -66,6 +67,11 @@ async def _run(cfg: Config) -> int:
         logger.info("closing WS server")
         ws_server.close()
         await ws_server.wait_closed()
+        cleanup_task.cancel()
+        try:
+            await cleanup_task
+        except asyncio.CancelledError:
+            pass
 
     return 0
 

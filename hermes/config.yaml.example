@@ -1,16 +1,28 @@
 # Snippet to merge into ~/.hermes/config.yaml on the host that runs Hermes.
 #
-# Adds the AI_Proxy MCP bridge as an HTTP-transport MCP server.
-# Hermes will discover three tools at startup:
-#   mcp_ai_proxy_list_devices
-#   mcp_ai_proxy_run_on_device
-#   mcp_ai_proxy_get_device_status
+# Adds the AI_Proxy MCP bridge as an HTTP-transport MCP server. After a
+# `hermes gateway restart`, Hermes will discover six tools at startup:
+#   mcp_ai_proxy_list_devices         — read-only inventory
+#   mcp_ai_proxy_get_device_status    — read-only health
+#   mcp_ai_proxy_start_task           — fire-and-forget kick-off
+#   mcp_ai_proxy_wait_for_progress    — long-poll for new chunks
+#   mcp_ai_proxy_get_task_status      — non-blocking snapshot
+#   mcp_ai_proxy_cancel_task          — soft cancel
 
 mcp_servers:
   ai_proxy:
     url: "http://127.0.0.1:8766/mcp"
-    # Generous timeout: a Copilot run can be slow.
-    timeout: 600
-    # Optional: keep only the tools you want exposed.
-    # tools:
-    #   include: [list_devices, run_on_device, get_device_status]
+    # Tool calls are now short-lived (start_task returns immediately,
+    # wait_for_progress is capped at WAIT_MAX_TIMEOUT in the bridge), so a
+    # tight per-call timeout is fine. Add a few seconds of headroom over
+    # WAIT_MAX_TIMEOUT.
+    timeout: 130
+    # Whitelist the new tools so the LLM doesn't see anything stale.
+    tools:
+      include:
+        - list_devices
+        - get_device_status
+        - start_task
+        - wait_for_progress
+        - get_task_status
+        - cancel_task

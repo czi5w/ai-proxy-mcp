@@ -31,8 +31,9 @@ class Config:
     mcp_host: str
     mcp_port: int
     mcp_path: str
-    task_timeout_seconds: int
     register_timeout_seconds: int
+    task_retention_seconds: int
+    wait_max_timeout: int
     log_level: str
 
     @classmethod
@@ -43,8 +44,12 @@ class Config:
             mcp_host=_str("MCP_HOST", "127.0.0.1"),
             mcp_port=_int("MCP_PORT", 8766),
             mcp_path=_str("MCP_PATH", "/mcp"),
-            task_timeout_seconds=_int("TASK_TIMEOUT_SECONDS", 600),
             register_timeout_seconds=_int("REGISTER_TIMEOUT_SECONDS", 10),
+            # How long after completion a task remains queryable.
+            task_retention_seconds=_int("TASK_RETENTION_SECONDS", 600),
+            # Per-call cap on wait_for_progress timeout. Hermes can ask for
+            # less; we'll never wait longer than this.
+            wait_max_timeout=_int("WAIT_MAX_TIMEOUT", 120),
             log_level=_str("LOG_LEVEL", "INFO").upper(),
         )
 

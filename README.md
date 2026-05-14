@@ -13,16 +13,19 @@ Feishu  ──>  Hermes Agent (gateway: hermes-feishu)
 
 The bridge runs two servers in one process:
 
-- **WS Server** on `:8765` — accepts reverse connections from `ai_proxy.exe --ws-reverse`. Re-uses the existing register / request / chunk / done / error protocol; AI_Proxy needs no changes.
-- **MCP HTTP Server** on `:8766/mcp` — exposes three tools that Hermes can call.
+- **WS Server** on `:8765` — accepts reverse connections from `ai_proxy.exe --ws-reverse`. Re-uses the existing register / request / chunk / done / error / cancel protocol; AI_Proxy needs no changes.
+- **MCP HTTP Server** on `:8766/mcp` — exposes six observable-task tools.
 
 ## MCP tools
 
-| Tool                               | Description                                                              |
-|------------------------------------|--------------------------------------------------------------------------|
-| `mcp_ai_proxy_list_devices`        | List `device_id` of every connected AI_Proxy.                            |
-| `mcp_ai_proxy_run_on_device`       | Send `prompt` to a device and wait for the full reply (default 600 s).   |
-| `mcp_ai_proxy_get_device_status`   | Whether a device is connected and whether it has an in-flight task.      |
+| Tool                               | Description                                                                       |
+|------------------------------------|-----------------------------------------------------------------------------------|
+| `mcp_ai_proxy_list_devices`        | List `device_id` of every connected AI_Proxy.                                     |
+| `mcp_ai_proxy_get_device_status`   | Whether a device is connected and whether it has an in-flight task.               |
+| `mcp_ai_proxy_start_task`          | Fire-and-forget Copilot prompt on a device. Returns `task_id` immediately.        |
+| `mcp_ai_proxy_wait_for_progress`   | Long-poll up to N seconds for new chunks; returns the latest snapshot.            |
+| `mcp_ai_proxy_get_task_status`     | Non-blocking snapshot of task status / accumulated text / elapsed time.           |
+| `mcp_ai_proxy_cancel_task`         | Soft-cancel: bridge stops feeding data for this task (also forwards cancel frame).|
 
 ## Install
 
@@ -52,7 +55,8 @@ You should see:
 ```
 starting ai-proxy-mcp (ws=0.0.0.0:8765, mcp=127.0.0.1:8766/mcp)
 WS server listening on ws://0.0.0.0:8765
-MCP server built (tools: list_devices, run_on_device, get_device_status)
+MCP server built (tools: list_devices, get_device_status, start_task,
+                  wait_for_progress, get_task_status, cancel_task)
 MCP HTTP server listening on http://127.0.0.1:8766/mcp
 ```
 
@@ -111,7 +115,8 @@ See [.env.example](.env.example).
 | `MCP_HOST`                   | `127.0.0.1`      | Bind localhost only (Hermes is on the same machine). |
 | `MCP_PORT`                   | `8766`           |                                                      |
 | `MCP_PATH`                   | `/mcp`           | Informational; FastMCP fixes the path to `/mcp`.     |
-| `TASK_TIMEOUT_SECONDS`       | `600`            | Per-tool-call deadline.                              |
+| `TASK_RETENTION_SECONDS`     | `600`            | How long after completion a task remains queryable.  |
+| `WAIT_MAX_TIMEOUT`           | `120`            | Cap on `wait_for_progress` poll length.              |
 | `REGISTER_TIMEOUT_SECONDS`   | `10`             | How long to wait for the first `register` frame.     |
 | `LOG_LEVEL`                  | `INFO`           |                                                      |
 

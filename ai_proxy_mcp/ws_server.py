@@ -11,6 +11,7 @@ Wire protocol (sent as JSON text frames):
     Bridge -> AI_Proxy:
         { "type": "request",  "id": "<task_id>",
           "messages": [{ "role": "user", "content": "..." }] }
+        { "type": "cancel",   "id": "<task_id>" }
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from typing import Optional
 import websockets
 
 from .config import Config
-from .device_pool import DevicePool, is_ws_open
+from .device_pool import DevicePool, Task, is_ws_open
 
 logger = logging.getLogger(__name__)
 
@@ -35,24 +36,20 @@ class Bridge:
     objects directly.
     """
 
-    def __init__(self, pool: DevicePool, task_timeout: int) -> None:
+    def __init__(self, pool: DevicePool) -> None:
         self.pool = pool
-        self.task_timeout = task_timeout
 
-    async def run_on_device(self, device_id: str, prompt: str) -> str:
-        """Send `prompt` to the named device, wait for its full reply.
+    # ── Public API for tools ───────────────────────────────────
 
-        Raises:
-            RuntimeError: device offline, sending failed, AI_Proxy returned error,
-                or the device disconnected mid-task.
-            asyncio.TimeoutError: no `done` frame within ``task_timeout`` seconds.
-        """
+    async def start(self, device_id: str, prompt: str) -> Task:
+        """Send a `request` frame to the device and register a Task in the
+        ledger. Returns immediately with the Task object (status=RUNNING)."""
         ws = self.pool.get(device_id)
         if ws is None or not is_ws_open(ws):
             raise RuntimeError(f'device "{device_id}" not connected')
 
         task_id = str(uuid.uuid4())
-        task = self.pool.open_task(task_id, device_id)
+        task = self.pool.open_task(task_id, device_id, prompt)
 
         frame = json.dumps(
             {
@@ -64,14 +61,38 @@ class Bridge:
         try:
             await ws.send(frame)
         except Exception as exc:
-            self.pool.close_task(task_id)
+            self.pool.mark_done(
+                task_id, error=f"failed to send request: {exc}"
+            )
             raise RuntimeError(f"failed to send request to {device_id}: {exc}") from exc
 
-        try:
-            return await asyncio.wait_for(task.future, timeout=self.task_timeout)
-        except asyncio.TimeoutError:
-            self.pool.close_task(task_id)
-            raise
+        return task
+
+    async def cancel(self, task_id: str, reason: str = "") -> Optional[Task]:
+        """Soft-cancel: mark the task CANCELLED locally so subsequent chunks
+        are dropped, then send a cancel frame to the device. Whether the device
+        actually stops depends on its implementation (currently AI_Proxy only
+        logs the cancel frame).
+        """
+        task = self.pool.get_task(task_id)
+        if task is None:
+            return None
+        if task.is_done:
+            return task
+
+        # Mark cancelled before sending so that any chunks racing in get dropped.
+        self.pool.mark_done(task_id, cancelled=True, error=reason or None)
+
+        ws = self.pool.get(task.device_id)
+        if ws is not None and is_ws_open(ws):
+            frame = json.dumps({"type": "cancel", "id": task_id, "reason": reason})
+            try:
+                await ws.send(frame)
+            except Exception:
+                logger.exception(
+                    'failed to deliver cancel frame to device "%s"', task.device_id
+                )
+        return task
 
 
 async def _read_register(ws, register_timeout: int) -> Optional[str]:
@@ -107,26 +128,21 @@ async def _handle_inbound(ws, device_id: str, pool: DevicePool) -> None:
         task_id = msg.get("id")
 
         if msg_type == "chunk":
-            task = pool.get_task(task_id) if task_id else None
-            if task and task.device_id == device_id:
-                task.accumulated.append(msg.get("content") or "")
-            else:
-                logger.debug("[%s] orphan chunk for task %s", device_id, task_id)
+            if not task_id:
+                continue
+            content = msg.get("content") or ""
+            pool.update_chunk(task_id, content)
 
         elif msg_type == "done":
-            task = pool.close_task(task_id) if task_id else None
-            if task and not task.future.done():
-                task.future.set_result("".join(task.accumulated))
-            else:
-                logger.debug("[%s] orphan done for task %s", device_id, task_id)
+            if not task_id:
+                continue
+            pool.mark_done(task_id)
 
         elif msg_type == "error":
-            task = pool.close_task(task_id) if task_id else None
+            if not task_id:
+                continue
             err = msg.get("message") or "AI_Proxy error"
-            if task and not task.future.done():
-                task.future.set_exception(RuntimeError(err))
-            else:
-                logger.warning("[%s] orphan error: %s", device_id, err)
+            pool.mark_done(task_id, error=err)
 
         else:
             logger.debug("[%s] ignoring frame type=%r", device_id, msg_type)
@@ -175,7 +191,7 @@ def make_handler(cfg: Config, pool: DevicePool):
     return handler
 
 
-async def serve_ws(cfg: Config, pool: DevicePool) -> websockets.WebSocketServer:
+async def serve_ws(cfg: Config, pool: DevicePool):
     handler = make_handler(cfg, pool)
     # Disable server-initiated ping. AI_Proxy is single-threaded inside its
     # ACP loop and won't service pings during long Copilot runs (>20s by
@@ -191,3 +207,13 @@ async def serve_ws(cfg: Config, pool: DevicePool) -> websockets.WebSocketServer:
     )
     logger.info("WS server listening on ws://%s:%d", cfg.ws_host, cfg.ws_port)
     return server
+
+
+async def cleanup_loop(pool: DevicePool, interval_seconds: int = 60) -> None:
+    """Background task: periodically prune finished, expired entries from the
+    task ledger so memory stays bounded."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        removed = pool.cleanup_old_tasks()
+        if removed:
+            logger.debug("pruned %d stale tasks", removed)

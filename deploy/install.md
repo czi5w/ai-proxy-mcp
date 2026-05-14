@@ -101,8 +101,9 @@ journalctl --user -u hermes-gateway -f
 3. From Feishu, DM the bot: `@bot list my devices`. Hermes should call
    `mcp_ai_proxy_list_devices` and reply with `["alice-pc"]`.
 4. Then ask: `@bot in alice-pc, write a quicksort in python`. Hermes should
-   call `mcp_ai_proxy_run_on_device(device_id="alice-pc", prompt=...)` and
-   stream the result back.
+   call `mcp_ai_proxy_start_task(device_id="alice-pc", prompt=...)`, then
+   loop `mcp_ai_proxy_wait_for_progress(task_id, 30)` and relay each
+   progress chunk to the user before posting the final result.
 
 ## 5. Restart order on reboot
 
