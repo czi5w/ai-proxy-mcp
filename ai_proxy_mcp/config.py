@@ -32,6 +32,8 @@ class Config:
     mcp_port: int
     mcp_path: str
     register_timeout_seconds: int
+    ws_ping_interval_seconds: int
+    ws_ping_timeout_seconds: int
     task_retention_seconds: int
     wait_max_timeout: int
     log_level: str
@@ -45,6 +47,11 @@ class Config:
             mcp_port=_int("MCP_PORT", 8766),
             mcp_path=_str("MCP_PATH", "/mcp"),
             register_timeout_seconds=_int("REGISTER_TIMEOUT_SECONDS", 10),
+            # Heartbeat to keep NAT alive. Send a ping every 60 s; only treat
+            # the connection as dead if we don't get a pong for 600 s
+            # (long-task tolerant — AI_Proxy C++ may be blocked in ACP).
+            ws_ping_interval_seconds=_int("WS_PING_INTERVAL_SECONDS", 60),
+            ws_ping_timeout_seconds=_int("WS_PING_TIMEOUT_SECONDS", 600),
             # How long after completion a task remains queryable.
             task_retention_seconds=_int("TASK_RETENTION_SECONDS", 600),
             # Per-call cap on wait_for_progress timeout. Hermes can ask for

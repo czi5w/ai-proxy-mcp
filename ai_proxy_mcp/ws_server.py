@@ -193,19 +193,27 @@ def make_handler(cfg: Config, pool: DevicePool):
 
 async def serve_ws(cfg: Config, pool: DevicePool):
     handler = make_handler(cfg, pool)
-    # Disable server-initiated ping. AI_Proxy is single-threaded inside its
-    # ACP loop and won't service pings during long Copilot runs (>20s by
-    # default), so a heartbeat would force-disconnect every long task.
-    # We rely on TCP keepalive (kernel) plus normal frame traffic instead.
+    # Heartbeat strategy:
+    # - We MUST send something every minute or so, otherwise NAT/firewall
+    #   idle timeouts (often 120s) drop the TCP connection silently.
+    # - But AI_Proxy C++ is single-threaded inside its ACP loop and may
+    #   not read pings while a long Copilot run is in flight, so we set
+    #   a very generous ping_timeout to avoid killing healthy long tasks.
     server = await websockets.serve(
         handler,
         cfg.ws_host,
         cfg.ws_port,
-        ping_interval=None,
-        ping_timeout=None,
+        ping_interval=cfg.ws_ping_interval_seconds,
+        ping_timeout=cfg.ws_ping_timeout_seconds,
         max_size=8 * 1024 * 1024,
     )
-    logger.info("WS server listening on ws://%s:%d", cfg.ws_host, cfg.ws_port)
+    logger.info(
+        "WS server listening on ws://%s:%d (ping_interval=%ss, ping_timeout=%ss)",
+        cfg.ws_host,
+        cfg.ws_port,
+        cfg.ws_ping_interval_seconds,
+        cfg.ws_ping_timeout_seconds,
+    )
     return server
 
 
