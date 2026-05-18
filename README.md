@@ -115,6 +115,8 @@ See [.env.example](.env.example).
 | `MCP_HOST`                   | `127.0.0.1`      | Bind localhost only (Hermes is on the same machine). |
 | `MCP_PORT`                   | `8766`           |                                                      |
 | `MCP_PATH`                   | `/mcp`           | Informational; FastMCP fixes the path to `/mcp`.     |
+| `WS_PING_INTERVAL_SECONDS`   | `60`             | Sends WS ping frames to keep NAT/firewalls alive.     |
+| `WS_PING_TIMEOUT_SECONDS`    | `0`              | Deprecated; pong watchdog is always disabled.         |
 | `TASK_RETENTION_SECONDS`     | `600`            | How long after completion a task remains queryable.  |
 | `WAIT_MAX_TIMEOUT`           | `120`            | Cap on `wait_for_progress` poll length.              |
 | `REGISTER_TIMEOUT_SECONDS`   | `10`             | How long to wait for the first `register` frame.     |

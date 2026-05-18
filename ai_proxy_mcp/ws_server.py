@@ -196,23 +196,35 @@ async def serve_ws(cfg: Config, pool: DevicePool):
     # Heartbeat strategy:
     # - We MUST send something every minute or so, otherwise NAT/firewall
     #   idle timeouts (often 120s) drop the TCP connection silently.
-    # - But AI_Proxy C++ is single-threaded inside its ACP loop and may
-    #   not read pings while a long Copilot run is in flight, so we set
-    #   a very generous ping_timeout to avoid killing healthy long tasks.
+    # - But AI_Proxy C++ is single-threaded inside its reverse-WS loop:
+    #   while it's processing a request (ACP prompt) it does NOT read the
+    #   socket, so any pings we send pile up in the kernel buffer and no
+    #   pong comes back until the prompt finishes. Long Copilot runs
+    #   (>10 min) would otherwise hit ping_timeout and get killed mid-task.
+    # - Solution: keep sending pings for NAT keepalive, but disable the
+    #   pong watchdog (ping_timeout=None). Dead-peer detection then relies
+    #   on TCP-level errors, which is good enough for our LAN-style links.
+    if cfg.ws_ping_timeout_seconds and cfg.ws_ping_timeout_seconds > 0:
+        logger.warning(
+            "WS_PING_TIMEOUT_SECONDS=%s is ignored; disabling WS pong watchdog "
+            "for AI_Proxy reverse connections",
+            cfg.ws_ping_timeout_seconds,
+        )
+    ping_timeout = None
     server = await websockets.serve(
         handler,
         cfg.ws_host,
         cfg.ws_port,
         ping_interval=cfg.ws_ping_interval_seconds,
-        ping_timeout=cfg.ws_ping_timeout_seconds,
+        ping_timeout=ping_timeout,
         max_size=8 * 1024 * 1024,
     )
     logger.info(
-        "WS server listening on ws://%s:%d (ping_interval=%ss, ping_timeout=%ss)",
+        "WS server listening on ws://%s:%d (ping_interval=%ss, ping_timeout=%s)",
         cfg.ws_host,
         cfg.ws_port,
         cfg.ws_ping_interval_seconds,
-        cfg.ws_ping_timeout_seconds,
+        "disabled" if ping_timeout is None else f"{ping_timeout}s",
     )
     return server
 
