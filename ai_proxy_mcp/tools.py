@@ -147,12 +147,48 @@ def register(mcp: FastMCP) -> None:
     def get_task_status(task_id: str) -> dict:
         """Non-blocking snapshot of a task. Cheaper than ``wait_for_progress``
         when you only need a quick check.
+
+        Returns standard fields (status, accumulated_text, is_done, error) plus
+        structured event metadata when available:
+        - stop_reason: detailed reason the task ended (end_turn, cancelled, error, unknown:max_tokens, etc.)
+        - chunk_counts: {text, thought, tool, permission} counts
+        - duration_ms: total prompt duration in milliseconds
+        - tool_summary: list of tool calls with their statuses and exit codes
+        - last_event_seq: seq number of the latest structured event (for use with get_task_events)
         """
         bridge = _require_bridge()
         task = bridge.pool.get_task(task_id)
         if task is None:
             raise ToolError(f"unknown task_id: {task_id}")
         return task.snapshot()
+
+    @mcp.tool()
+    def get_task_events(task_id: str, since_seq: int = 0, limit: int = 200) -> dict:
+        """Return the structured event stream for a task.
+
+        Use this when accumulated_text alone is insufficient to understand what
+        happened (e.g. to inspect individual tool call exit codes, thought
+        sampling, or session rotation events).
+
+        Args:
+            task_id: The task to query.
+            since_seq: Only return events with seq > since_seq (for incremental polling).
+            limit: Maximum number of events to return (default 200).
+        """
+        bridge = _require_bridge()
+        task = bridge.pool.get_task(task_id)
+        if task is None:
+            raise ToolError(f"unknown task_id: {task_id}")
+
+        events = [e for e in task.events if e.get("seq", 0) > since_seq]
+        events = events[:limit]
+        next_seq = events[-1]["seq"] if events else since_seq
+        return {
+            "task_id": task_id,
+            "events": events,
+            "total_events": len(task.events),
+            "next_seq": next_seq,
+        }
 
     @mcp.tool()
     async def cancel_task(task_id: str, reason: str = "") -> dict:

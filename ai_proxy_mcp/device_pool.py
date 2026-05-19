@@ -58,6 +58,13 @@ class Task:
     # never gets stuck holding a stale set state.
     update_event: asyncio.Event = field(default_factory=asyncio.Event)
 
+    # ── Structured event passthrough fields (new) ───────────────
+    events: list[dict] = field(default_factory=list)
+    stop_reason: Optional[str] = None
+    chunk_counts: Optional[dict] = None
+    duration_ms: int = 0
+    tool_summary: list[dict] = field(default_factory=list)
+
     @property
     def accumulated(self) -> str:
         return "".join(self.chunks)
@@ -69,7 +76,7 @@ class Task:
     def snapshot(self) -> dict:
         now = time.time()
         elapsed = (self.done_ts or now) - self.started_ts
-        return {
+        result = {
             "task_id": self.task_id,
             "device_id": self.device_id,
             "status": self.status.value,
@@ -79,6 +86,18 @@ class Task:
             "is_done": self.is_done,
             "error": self.error,
         }
+        # Structured event passthrough fields (present when available)
+        if self.stop_reason is not None:
+            result["stop_reason"] = self.stop_reason
+        if self.chunk_counts is not None:
+            result["chunk_counts"] = self.chunk_counts
+        if self.duration_ms > 0:
+            result["duration_ms"] = self.duration_ms
+        if self.tool_summary:
+            result["tool_summary"] = self.tool_summary
+        if self.events:
+            result["last_event_seq"] = self.events[-1].get("seq", 0)
+        return result
 
 
 class DevicePool:
@@ -146,6 +165,57 @@ class DevicePool:
             return
         task.chunks.append(content)
         self._notify(task)
+
+    def append_event(self, task_id: str, event: dict) -> None:
+        """Append a structured event to the task's event list (de-dup by seq)."""
+        task = self._tasks.get(task_id)
+        if task is None:
+            return
+        seq = event.get("seq")
+        # De-duplicate by seq if present
+        if seq is not None and task.events and task.events[-1].get("seq", -1) >= seq:
+            return
+        task.events.append(event)
+
+        # Update tool_summary from tool_start / tool_complete events
+        event_kind = event.get("event_kind", "")
+        payload = event.get("payload", {})
+        if event_kind == "tool_start":
+            tool_id = payload.get("tool_call_id", "")
+            task.tool_summary.append({
+                "tool_call_id": tool_id,
+                "title": payload.get("title", ""),
+                "status": "in_progress",
+            })
+        elif event_kind == "tool_complete":
+            tool_id = payload.get("tool_call_id", "")
+            for entry in task.tool_summary:
+                if entry.get("tool_call_id") == tool_id:
+                    entry["status"] = payload.get("status", "completed")
+                    if "exit_code" in payload:
+                        entry["exit_code"] = payload["exit_code"]
+                    break
+
+        self._notify(task)
+
+    def set_done_metadata(
+        self,
+        task_id: str,
+        *,
+        stop_reason: Optional[str] = None,
+        chunk_counts: Optional[dict] = None,
+        duration_ms: int = 0,
+    ) -> None:
+        """Set structured metadata from the done/error frame."""
+        task = self._tasks.get(task_id)
+        if task is None:
+            return
+        if stop_reason is not None:
+            task.stop_reason = stop_reason
+        if chunk_counts is not None:
+            task.chunk_counts = chunk_counts
+        if duration_ms > 0:
+            task.duration_ms = duration_ms
 
     def mark_done(
         self,

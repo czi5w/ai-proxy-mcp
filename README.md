@@ -160,3 +160,78 @@ hermes gateway stop && hermes gateway start
 
 Verify by DMing the bot `pwd` — it should print the directory containing
 your `AGENTS.md`.
+
+## Continuous execution with Hermes `/goal`
+
+Hermes already includes a persistent `/goal` command. Use it directly from the
+Hermes-connected chat; no Feishu bot-side slash parsing is required.
+
+Example:
+
+```text
+/goal Use device test-pc through the AI_Proxy MCP tools. In D:\One-SVS\NISSAN\k2a, keep working until the authoritative project coverage report shows overall coverage >= 80%. Run the real test/coverage command each round. Continue if below 80%; stop only with evidence or a real blocker.
+```
+
+Useful commands:
+
+```text
+/goal status
+/goal pause
+/goal resume
+/goal clear
+```
+
+Recommended Hermes config (`~/.hermes/config.yaml`):
+
+```yaml
+goals:
+  max_turns: 40
+
+auxiliary:
+  goal_judge:
+    provider: openrouter
+    model: google/gemini-3-flash-preview
+```
+
+If slash-command access control is enabled for your platform, make sure the
+user or group is allowed to run `goal`. After changing context or config,
+restart the Hermes gateway so it reloads `terminal.cwd`, context files, and
+goal settings.
+
+## Scheduled AI_Proxy work from Hermes cron
+
+Hermes cron jobs run in a separate `platform="cron"` agent. They only see
+AI_Proxy MCP tools when the MCP server is configured for the same Hermes profile
+and the job's toolset filter allows the MCP toolset.
+
+Before scheduling a job that must call `mcp_ai_proxy_*`, confirm:
+
+```yaml
+mcp_servers:
+  ai_proxy:
+    url: "http://127.0.0.1:8766/mcp"
+    timeout: 600
+```
+
+If the cron job has an `enabled_toolsets` override, include either `ai_proxy`
+or `mcp-ai_proxy`. Leaving `enabled_toolsets` unset is also valid if the cron
+platform tools include default MCP servers.
+
+Also set the job `workdir` to the directory containing the AI_Proxy context
+file (`AGENTS.md`, `.hermes.md`, `CLAUDE.md`, or `.cursorrules`), otherwise the
+cron agent will not load these orchestration instructions.
+
+Example `cronjob` tool update:
+
+```json
+{
+  "action": "update",
+  "job_id": "f4d2a0c879db",
+  "enabled_toolsets": ["ai_proxy", "file", "terminal"],
+  "workdir": "/home/<your-user>/.hermes"
+}
+```
+
+After updating, trigger one manual run and verify the output mentions
+`mcp_ai_proxy_list_devices` or successfully reports `test-pc` status before
+letting the schedule continue unattended.

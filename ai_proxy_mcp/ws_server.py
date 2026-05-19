@@ -5,8 +5,12 @@ Wire protocol (sent as JSON text frames):
     AI_Proxy -> Bridge:
         { "type": "register", "device_id": "<id>" }                        (first frame, required)
         { "type": "chunk",    "id": "<task_id>", "content": "..." }
-        { "type": "done",     "id": "<task_id>" }
-        { "type": "error",    "id": "<task_id>", "message": "..." }
+        { "type": "event",    "id": "<task_id>", "seq": N, "ts_ms": ...,
+          "event_kind": "...", "payload": {...} }
+        { "type": "done",     "id": "<task_id>", "stop_reason": "...",
+          "chunk_counts": {...}, "duration_ms": N }
+        { "type": "error",    "id": "<task_id>", "message": "...",
+          "stop_reason": "...", "chunk_counts": {...}, "duration_ms": N }
 
     Bridge -> AI_Proxy:
         { "type": "request",  "id": "<task_id>",
@@ -133,15 +137,40 @@ async def _handle_inbound(ws, device_id: str, pool: DevicePool) -> None:
             content = msg.get("content") or ""
             pool.update_chunk(task_id, content)
 
+        elif msg_type == "event":
+            if not task_id:
+                continue
+            event = {
+                "seq": msg.get("seq", 0),
+                "ts_ms": msg.get("ts_ms", 0),
+                "event_kind": msg.get("event_kind", ""),
+                "payload": msg.get("payload", {}),
+            }
+            pool.append_event(task_id, event)
+
         elif msg_type == "done":
             if not task_id:
                 continue
+            # Extract structured metadata from enhanced done frame
+            pool.set_done_metadata(
+                task_id,
+                stop_reason=msg.get("stop_reason"),
+                chunk_counts=msg.get("chunk_counts"),
+                duration_ms=msg.get("duration_ms", 0),
+            )
             pool.mark_done(task_id)
 
         elif msg_type == "error":
             if not task_id:
                 continue
             err = msg.get("message") or "AI_Proxy error"
+            # Extract structured metadata from enhanced error frame
+            pool.set_done_metadata(
+                task_id,
+                stop_reason=msg.get("stop_reason"),
+                chunk_counts=msg.get("chunk_counts"),
+                duration_ms=msg.get("duration_ms", 0),
+            )
             pool.mark_done(task_id, error=err)
 
         else:
